@@ -1,0 +1,289 @@
+\documentclass[a4paper]{article}
+\usepackage{indentfirst}
+\usepackage{amsmath}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{gensymb}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{listings}
+\lstset{language=C,
+numberstyle=\footnotesize,
+basicstyle=\ttfamily\footnotesize,
+numbers=left,
+stepnumber=1,
+frame=shadowbox,
+breaklines=true}
+
+
+\begin{document}
+
+\title{Stat 8051, Fall 2015 \\  University of Minnesota - Twin Cities \\
+Auto Insurance Rate-Modeling}
+\author{Riki Saito}
+
+\maketitle
+\thispagestyle{empty}
+\newpage
+
+\section*{Introduction}
+
+About insurance, predicting loss,
+scope of this project
+
+Used R
+
+\section*{Background}
+
+The data was provided to us by folks from Travelers, an Auto Insurance Company.  The data comes from one-year insurance policies from 2004/2005, with 67856 observations. The relevant response variables in this analysis is \textbf{clm}, \textbf{numclaims}, and \textbf{claimcst0}. For the purpose of this project, the data is split into "T" (training data, consisting of 1/3 of the data), and "V or H" (validation or hold-out data, consisting of 2/3 of the data). The response variables of the "V or H" subset is set to \textbf{NA}, and the goal of this project is to predict the values of \textbf{claimcst0} for the "V or H" subset. Here is an overview of all the varibles in the data set.
+
+\begin{table}[h]
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Variable} & \textbf{Description}        \\ \hline
+veh\_value         & vehicle value, in $10000$s             \\ \hline
+exposure      & proportion of year of policy held, ranging from 0 - 1     \\ \hline
+clm             & occurence of claim (0 = No, 1 = Yes)                                  \\ \hline
+numclaims         & number of claims                                                               \\ \hline
+claimcst0        & claim amount (0 if no claim)                                                    \\ \hline
+veh\_body             &  type of vehicle body                                      \\ \hline
+gender             & gender of driver (M, F)                                    \\ \hline
+area             & driver's area of residence (A, B, C, D, E, F)                               \\ \hline
+agecat           & driver's age category, ordinal scale from 1 (young) - 6 (old)        \\ \hline
+\end{tabular}
+\end{table}
+
+Some interesting findings about the data (figures), hustogram of response variables
+
+Of the 67856 observations, 4624 had at least one claim.
+
+
+\section*{Methods}
+
+Here we will discuss how we concluded on our regression model, selection of variables and interaction of variables, and the evaluation and validation of the model performance. 
+
+\subsection*{Model}
+
+The response variable of relevance is \textbf{claimcst0} or the total cost of claims (loss) in a given exposure period for each policy holder. Let us explore regression models to predict this variable.
+
+Let us first consider the use of the most simplest form of regression: the \textbf{Ordinary Least Squares}. Arguably the most commonly used form of regression, the OLS has several assumptions about the data, one of which is that the distribution of the response variable be of a normal distribution. However, from the figure, we see that the distribution of \textbf{claimcst0} is heavilty concentrated around 0, followed by several diminishing frequency bars of minimal size. 
+\\
+
+One solution to resolving the violation of the normality assumption would be to consider transofmations of the response, but to better fit the nature of the data, it is ideal to consider the use of \textbf{Generalized Linear Models}, which allows us to select a new distribution that better fits the response variable.
+\\
+
+The folks from Travelers introduced us to the \textbf{Tweedie Distribution}, which is a family of probability distributions, namely Poisson and Gamma distributions. The Tweedie distribution allows for the relevant variable to have a positive mass at zero. while following a continuous distribution otherwise. So we considered the \textbf{Tweedie Regression} with a log-link and a variance power of 1.3 (a range of (1,2) corresponds to the Tweedie distribution, otherwise known as the compound Poisson model). 
+** Model Outputs?
+\\
+
+However, after further research, we decided an alternative approach to modeling claimcst0. We thought of the cost of claims \textbf{claimcst0} as a product of the Frequency of claims (in the given \textbf{exposure} period of the policy) and the Severity of the claim. So we then considered a \textbf{Two-Part Model}, one that would predict the Frequency of claims (\textbf{numclaims}), and another that would predict the average Severity of a claim (\textbf{claimcst0}/\textbf{numclaims}). 
+\\
+
+We can think of the cost of claims as a prediction of pure premium as such:
+
+\begin{center}
+Pure Premium = $Frequency * Severity$ = $\hat{numclaims} * \hat{\frac{claimcst0}{numclaims}}$
+\end{center}
+
+\subsubsection*{Frequency Model}
+
+Let us first discuss the first model: the Frequency Model. We want to model the number of claims of policy holders, which takes on discrete values. Therefore the Frequency Model can be modeled using either the \textbf{Poisson} Regression or the \textbf{Negative Binomial} Regression. If the assumptions of the Poisson distribution are held by the data, it is preferred since it is the natural approach to a count data. Let us check some assumptions.
+\\
+
+For the Poisson distribution, the mean and the variance ($\lambda$) should be roughty equal to each other. In our training data set, the mean is -- and the variance is --. This also indicates that there is no sign of overdispersion. Therefore it is appripriate to use the Poisson distribution.
+\\
+
+Now let us model this in R. We can use the entire training data for this model since we want to consider all cases, regardless of the occurrence of the claim. For modeling Count, we used log(\textbf{exposure}) as an offset because log(numclaims/exposure) would theoretically give us the estimated count in a fixed period of time (in this case one year), but we are only interested in the numclaims, hence in the model is treated as a response while offset(log(exposure)) is a predictor. We used exposure as an log(offset) instead of as a weight, because when predicting for new values of x, we would not be able to use exposure as a predictor if it is treated as a weight in the model.
+
+\subsubsection*{Severity Model}
+
+Now we will move onto the second model: the Severity Model. This model will take the average claim cost (total claim cost / number of claims) as the response. From the figure----, we see that the distribution of the data has a strong right skewness. Therefore the Severity Model can be modeled using either the \textbf{Gamma} Regression or the \textbf{Inverse Gaussian} Regression. 
+\\
+
+For modeling severity, we only want to consider the data for which there was a claim, so the appropriate description of the model would be the mean function of the severity of a claim given that there was a claim. We considered different distributions for this model, but we found that the inverse Gaussian model was the best. Our runner-up was the Gamma regression, but we noticed that the predictions for the Gamma predictions were too dispersed, and gave us some extreme predictions (the right-side tail of the prediction distributions were heavy-tailed). After testing the Inverse Gaussian method (suggested in the book Generalized Linear Models for Insurance Data), we saw that the predictions of claimcst0 for the method had more conservative predictions, so we decided to proceed with Inverse Gaussian GLM.
+\\
+
+Ultimately we used the two-part model, and the prediction of \textbf{claimcst0} came from the product of predictions from the Frequency Model and the predictions from the Severity Model. 
+
+
+\subsection*{Variable Selection}
+
+e.	How did you do you variable selection?  
+
+We performed variable selection first by using the step function (both direction) starting with the full model (considering all variables except veh\_body). After, we evaluated the p-values and use the Anova function from the car package to consider removal of further variables (to prevent overfitting), and evaluating the model on the cross-validation Gini coefficient. We went through a lot of trial and error. 
+
+The reason we did not consider veh\_body as a predictor in either models is because the grouping in veh\_body was too sparse. Some categories contained as little as 9 observations, and we decided that model coefficients computed would not be very accurate, perhaps overfitting on those small sample, which would not be appropriate for this analysis. 
+
+INTERACTIONS
+
+
+\subsection*{Evaluation and Validation}
+
+d.	How did you evaluate your model (e.g. fit statistics, over-fitting, etc.)?
+
+We evaluated our model fit using cross validation, computing the gini coefficient on the predictions of the training data from the k-fold cross validation models, and after discussion we agreed that the gini coefficient of this would be similar to the gini coefficient of the new predictions for the V or H data. We also used a bootstrapping method to compute an "unbiased" set of coefficients after deciding on a model after model selection.
+
+Goodness of it: deviance, which we did not rely too much on.
+
+Gini coefficient. However, computing the gini coefficient on the training data based on the model produced from the same data does not capture the performance of the model on a new data because it does not consider overfitting. So in order to try to capture the performance of the model on new data, we used Cross Validation.
+
+\subsubsection*{Cross Validation}
+
+According to many sources, we found that a 10-fold cross validation was appripriate. 
+
+For a goodness of fit statistic, we used the gini coefficient based on predictions of the training data from the cross validation models, so that no prediction came from a model that used the observation for which the prediction is made on. 
+
+\subsubsection*{Bootstrapping}
+
+After deciding on the final model, we applied Bootstrapping to compute 
+
+
+
+
+\section*{Results}
+
+Final Model
+Gini coefficient from cross-validations
+Final model coefficients, model goodness of fit, distribution of predictions, final gini, MSE, etc
+
+\section*{Conclusion}
+
+f.	Any concerns about the resulting model?
+g.	What questions to you have about the data?
+
+We had some concern about the data, for example the 0 values in the predictor veh\_value. We were not sure whether these 0's truly meant that the value of a vehicle was 0, or if the 0 meant something else (like NULL or MISSING). We ended up using the 0's in the model, but if we truly understood what those meant we may have changed how we handled those observations. 
+
+Autocorrelation: two individuals may have had been in the same accident, in which case those two would be correlated, but from the information provided we would not know
+
+
+h.	What variables help explain pure premium (explain to a non-statistician; please include this in your presentation for your business partner)?
+
+I would say vehicle value is one of the most crucial variable in estimating the pure premium, because insuring something of a higher value means that the loss from accidents would be larger, so conversely the premium should be higher. Vehicle age and vehicle body (model) would also be important variables, because intuitively we can say that older vehicles tend to have more frequent problems with vehicle performance that may lead to losses, and probably vehicle performance also varies by body type or model. In terms of the drivers, the age of the driver and possibly gender may be important as well. We can with some confidence say that younger drivers and senior drivers tend to have a higher accident rate than those that fall closer in the middle of the age range. We might also see a difference in accident rate by gender. We could also argue that accident rates differ by area as different neighborhoods could have different levels of safeness of driving, but this might be correlated with the type of drivers that live in the area, in which case gender and age could explain the differences in accident rates by neighborhoods. 
+
+i.	What other variables not in the data set do you think might be useful?
+
+If we had age as a numeric value rather than categories might have a better predictive power (gives us more information). 
+
+Another variable not included in this data set that could have a high potential for estimating pure premium is the driver history or record (driving record or any sort of convictions) which could help estimate how much of a liability the driver could have.
+
+
+\section*{Appendix}
+
+\subsection*{A: References}
+
+Generalized Linear Models for Insurance Data
+
+\subsection*{B: R Code for Final Predictions} 
+
+\begin{lstlisting}[language=R]
+#set working directory, load data, load functions
+setwd("C:/Users/Riki/Dropbox/UMN Courses/STAT 8051/Travelers/")
+kangaroo <- read.csv("Kangaroo.csv")
+kangtrain <- subset(kangaroo, split == "T")
+
+SumModelGini <- function(solution, submission) {
+  df = data.frame(solution = solution, submission = submission)
+  df <- df[order(df$submission, decreasing = TRUE),]
+  df
+  df$random = (1:nrow(df))/nrow(df)
+  df
+  totalPos <- sum(df$solution)
+  df$cumPosFound <- cumsum(df$solution) # this will store the cumulative number of positive examples found (used for computing "Model Lorentz")
+  df$Lorentz <- df$cumPosFound / totalPos # this will store the cumulative proportion of positive examples found ("Model Lorentz")
+  df$Gini <- df$Lorentz - df$random # will store Lorentz minus random
+  return(sum(df$Gini))
+}
+
+NormalizedGini <- function(solution, submission) {
+  SumModelGini(solution, submission) / SumModelGini(solution, solution)
+}
+
+#cross validation
+cv <- function(fit, fit2 = NULL, data, data2 = NULL, K){
+  cost = function(y, yhat) mean((y - yhat)^2)
+  n = nrow(data)
+  if(K > 1) s = sample(rep(1:K, ceiling(nrow(data)/K)),nrow(data)) else 
+  if(K == 1) s = rep(1, nrow(data))
+  glm.y <- fit$y
+  cost.0 <- cost(glm.y, fitted(fit))
+  ms <- max(s)
+  call <- Call <- fit$call
+  if(!is.null(fit2)) call2 <- Call2 <- fit2$call
+  CV <- CV.coef <- NULL
+
+  pb <- winProgressBar(title = "progress bar", min = 0, max = K, width = 300)
+  Sys.time() -> start
+
+  for (i in seq_len(ms)) {
+    j.out <- seq_len(n)[(s == i)]
+    if(K > 1) j.in <- seq_len(n)[(s != i)] else if (K==1) j.in = j.out
+    Call$data <- data[j.in, , drop = FALSE]; 
+    d.glm <- eval.parent(Call)
+    pred.glm <- predict(d.glm, newdata=data[j.out,], type="response")
+    if(!is.null(fit2) & !is.null(data2)){
+      j2.out.data <- merge(data2, data[j.out,])
+	if(K > 1) j2.in.data <- merge(data2, data[j.in,]) else if (K==1) j2.in.data = j2.out.data
+	Call2$data <- j2.in.data
+      d.glm2 <- eval.parent(Call2)
+	pred.glm2 <- predict(d.glm2, newdata=data[j.out,], type="response")
+    }
+    if(!is.null(fit2)) CV$Fitted = rbind(CV$Fitted, cbind(j.out, pred.glm*pred.glm2)) else 
+	CV$Fitted = rbind(CV$Fitted, cbind(j.out, pred.glm))
+    CV.coef$coef <- rbind(CV.coef$coef, coef(d.glm))
+    CV.coef$se <- rbind(CV.coef$se, coef(summary(d.glm))[,2])
+    Sys.sleep(0.1); setWinProgressBar(pb, i, title=paste( round(i/K*100, 0),"% done"))
+  }
+  close(pb); Sys.time() -> end
+  cat("Cross-Validation Time Elapsed: ", round(difftime(end, start, units="secs"),3) ,"seconds \n")
+  Fitted <- CV$Fitted[order(CV$Fitted[,1]),2]
+  Fitted
+}
+
+# bootstrap
+library(boot)
+bs <- function(formula, data, family, indices) {
+  d <- data[indices,] # allows boot to select sample 
+  fit <- glm(formula, family, data=d)
+  return(coef(fit)) 
+} 
+
+#two part model (Count * Severity)
+#model 1: count (offset(log(exposure))
+pm.sub <- glm(numclaims ~ offset(log(exposure))+factor(agecat)+area+veh_value+veh_age+
+	veh_value:veh_age+area:veh_value, family = poisson, data=subset(kangtrain))
+summary(pm.sub)
+Count = predict(pm.sub, newdata = kangaroo, type="response")
+
+pm.bs <- boot(data=subset(kangtrain), statistic=bs, R=500, formula=formula(pm.sub), family = poisson, parallel="multicore")
+cbind(coef(pm.sub),colMeans(pm.bs$t))
+
+pm.sub.bs <- pm.sub
+pm.sub.bs$coefficients <- colMeans(pm.bs$t)
+Count.bs = predict(pm.sub.bs, newdata = kangaroo, type="response")
+
+#model 2: severity inverse gaussian model
+ivg.sub <- glm((claimcst0/numclaims) ~ gender + veh_age + agecat,
+	family=inverse.gaussian(link="log"),data=subset(kangtrain, clm > 0))
+Severity = predict(ivg.sub, newdata=kangaroo, type="response")
+
+ivg.bs <- boot(data=subset(kangtrain, clm > 0 & veh_value>0), statistic=bs, R=500, formula=formula(ivg.sub), family=inverse.gaussian(link="log"), parallel="multicore")
+cbind(coef(ivg.sub),colMeans(ivg.bs$t))
+
+ivg.sub.bs <- ivg.sub
+ivg.sub.bs$coefficients <- colMeans(ivg.bs$t)
+Severity.bs = predict(ivg.sub.bs, newdata = kangaroo, type="response")
+
+# gini coefficient on the whole training data
+NormalizedGini(kangtrain$claimcst0, predict(pm.sub.bs, newdata=kangtrain, type="response")*predict(ivg.sub.bs, newdata=kangtrain, type="response"))
+
+#cross validated gini coefficient
+cv.ivg <- lapply(1:10, function(x) cv(fit=pm.sub, fit2=gam.sub, data = kangtrain, data2=subset(kangtrain, clm>0), K=10))
+mean(sapply(1:10, function(x) NormalizedGini(kangtrain$claimcst0, cv.ivg[[x]])))
+sd(sapply(1:10, function(x) NormalizedGini(kangtrain$claimcst0, cv.ivg[[x]])))
+
+group1 = as.numeric(subset(Count.bs*Severity.bs, kangaroo$split != "T"))
+save(group1, file="group1.rda")
+\end{lstlisting}
+
+
+\end{document}
